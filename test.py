@@ -38,7 +38,7 @@ class MongoDBQueryEngine:
 
         # Initialize LLM for query generation
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-pro",
+            model="gemini-1.5-flash",
             google_api_key=google_api_key,
             temperature=0.2
         )
@@ -67,11 +67,11 @@ class MongoDBQueryEngine:
         print(f"Found {len(collection_names)} collections: {', '.join(collection_names)}")
         
         # Create schema information for each collection
-        for col_name in collection_names:
-            if col_name == "system.views":
-                continue
-            print(f"Analyzing collection: {col_name}")
-            self._analyze_collection(col_name)
+        # for col_name in collection_names:
+        #     if col_name == "system.views":
+        #         continue
+        #     print(f"Analyzing collection: {col_name}")
+        self._analyze_collection("portcalls")
     
     def _analyze_collection(self, collection_name: str, sample_size: int = 100):
         """Analyze a collection's schema from a sample of documents"""
@@ -203,8 +203,10 @@ class MongoDBQueryEngine:
                 else:
                     fixed_query[k] = v
             return fixed_query
+            
         elif isinstance(query, list):
             return [self._fix_date_formats(item) if isinstance(item, (dict, list)) else item for item in query]
+            
         else:
             return query
 
@@ -216,13 +218,14 @@ class MongoDBQueryEngine:
         
         collection_info = self.collections[self.current_collection]
         sample_doc = collection_info["sample_document"]
-        
+        print("11111111111111111")
+        print("4444444444444444444444444")
         # Format field information
         fields_info = "\n".join([
             f"- {field} (types: {', '.join(info['types'])}, examples: {', '.join(info['examples']) if info['examples'] else 'N/A'})"
             for field, info in collection_info["fields"].items()
         ])
-        
+        print("777777777777777777777777777777777")
         # Add specialized handling for time-series and trend analysis
         trend_guidance = ""
         if "date_fields" in collection_info and collection_info["date_fields"]:
@@ -234,7 +237,7 @@ class MongoDBQueryEngine:
             - Avoid using $dateFromString with format specifiers - use simpler date expressions like ISODate()
             - For aggregations by time period, use $group with date operators like $dayOfMonth, $month, $year
             """
-        
+        print("555555555555555555555555555555555555555555")
         # Create prompt for query generation
         prompt = f"""
         You are a MongoDB query expert. Generate a MongoDB query or aggregation pipeline to answer the following question.
@@ -267,21 +270,22 @@ class MongoDBQueryEngine:
 
         Format:
         ```json
-        {
-          "query_type": "find|aggregate|count|distinct",
-          "query": {...} or [...],
-          "explanation": "..."
-        }
+        {{
+        "query_type": "find|aggregate|count|distinct",
+        "query": {{...}} or [...],
+        "explanation": "..."
+        }}
         ```
         """
-        
+       
         # Generate query using LLM
         messages = [
             SystemMessage(content="You are a MongoDB query expert assistant that outputs only valid JSON objects."),
             HumanMessage(content=prompt)
         ]
-        
+        print("-----------------------")
         response = self.llm.invoke(messages)
+        print("---------------------------",response)
         response_text = response.content
         
         # Extract JSON from the response
@@ -289,25 +293,47 @@ class MongoDBQueryEngine:
         match = re.search(json_pattern, response_text)
         
         if match:
+            print("uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu")
             json_str = match.group(1)
             try:
+                print("ssssssssssssssssssssssssssss")
                 query_data = json.loads(json_str)
+                print("tttttttttttttttttttttttttttttttttttt",query_data)
                 # Fix potential date format issues
                 if "query" in query_data:
+                    print("lllllllllllllllllllllllll")
                     query_data["query"] = self._fix_date_formats(query_data["query"])
+                print("//////////////",query_data)
                 return query_data
+                # pipeline = {
+                #     "query_type": "aggregate",
+                #     "query":[
+                #     {
+                #         "$match": {
+                #             "createdOn": {
+                #                 "$gte": "2025-04-01T00:00:00Z",
+                #                 "$lte": "2025-04-31T23:59:59Z"
+                #             }
+                #         }
+                #     },
+                #     {
+                #         "$count": "portcall_count"
+                #     }
+                # ]}
+                return pipeline
             except json.JSONDecodeError as e:
                 raise ValueError(f"Generated invalid JSON: {e}\nJSON string: {json_str}")
         else:
+            print("hhhhhhhhhhhhhhhhhhhhhh")
             # Try to parse the whole response as JSON if no code block found
             try:
                 query_data = json.loads(response_text)
                 if "query" in query_data:
                     query_data["query"] = self._fix_date_formats(query_data["query"])
+                print("sssssssssssssssssssssss",query_data)    
                 return query_data
             except:
                 raise ValueError(f"Could not extract valid JSON from response: {response_text}")
-
     def _handle_date_in_query(self, query):
         """Convert date strings to date objects in queries"""
         if isinstance(query, dict):
@@ -727,17 +753,22 @@ class MongoDBQueryEngine:
             return "Please select a collection first using 'use collection [name]'"
         
         try:
+            print("=====================",question)
             # First, check if this is a trend analysis or specialized analytical query
             analytical_result = self.process_analytical_question(question)
+            print("8888888888888888888888888",analytical_result)
             if analytical_result:
                 return analytical_result
                 
             # Otherwise, generate and execute the appropriate MongoDB query
             query_data = self.generate_mongodb_query(question)
+            print("0000000000000000000000",query_data)
             result = self.execute_query(query_data)
             
+            print("5555555555555555555555",result)
             # Format the result for display
             response = self._format_result(result, question)
+            print("33333333333333333333333333",response)
             return response
             
         except Exception as e:
@@ -818,7 +849,7 @@ def main():
     mongodb_uri = os.getenv("MONGO_URL")
     database_name = os.getenv("MONGO_DB")
     google_api_key = os.getenv("GOOGLE_API_KEY")
-    
+    print(google_api_key)
     if not mongodb_uri:
         mongodb_uri = input("Enter MongoDB URI: ")
     
